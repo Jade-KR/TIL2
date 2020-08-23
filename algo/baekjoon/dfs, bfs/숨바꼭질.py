@@ -1,4 +1,5 @@
 import sys
+from collections import deque
 sys.stdin = open('숨바꼭질.txt')
 
 def findOut(location, time):
@@ -21,6 +22,19 @@ def findOut(location, time):
             newL = location * 2
 
         findOut(newL, time+1)
+
+def bfs(location, time):
+    global minT
+    if time > minT:
+        return
+    if location == K:
+        if time < minT:
+            minT = time
+            return
+        else:
+            return
+
+
 
 
 
