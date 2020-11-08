@@ -282,7 +282,7 @@ wp_get_post_parent_id(get_the_ID());
 
 Get_the_title(); - 현재 페이지의 id 값을 리턴
 
-Get_permalink(); - 이전 페이지의 Url 리턴
+Get_permalink(); - 고유의 Url 리턴
 
  
 
@@ -420,6 +420,8 @@ wp_nav_menu(array(
 
 
 ### 커스텀 메뉴 만들기
+
+ACF 플러그인 다운
 
  
 
@@ -1131,5 +1133,524 @@ $today = date('Ymd');
 
 ## Creating "Program" post type
 
+functions.php
 
+```php
+// Program post type
+  register_post_type('program', array(
+    'supports' => array('title', 'editor'),
+    'rewrite' => array('slug' => 'programs'),
+    'has_archive' => true,
+    'public' => true,
+    'labels' => array(
+      'name' => 'Programs',
+      'add_new_item' => 'Add New Program',
+      'edit_item' => 'Edit Program',
+      'all_items' => 'All Programs',
+      'singular_name' => 'Program'
+    ),
+    'menu_icon' => 'dashicons-awards'
+  ));
+}
+add_action('init', 'prac_post_types');
+```
+
+새 글을 쓰고 페이지를 확인해보면 없는 페이지라고 나온다
+
+admin 페이지 세팅 -> 고유주소 (permalink) -> 저장
+
+위와 같이 하여 워드프레스가 다시 빌드하도록 만들어줘야함
+
+
+
+### program 디테일 페이지 만들기
+
+**single-program.php 생성**
+
+원래 있던 single.php 의 코드를 복사하여 붙여넣기
+
+세부 내용 수정
+
+
+
+archive-program.php 파일 생성
+
+Archive-event.php 코드 복사하여 붙여넣기
+
+세부 내용 수정
+
+
+
+**내용 조작하기**
+
+Functions.php
+
+```php
+function prac_adjust_queries($query) {
+  if (!is_admin() && is_post_type_archive('program') AND $query->is_main_query()) {
+    $query->set('orderby', 'title');
+    $query->set('order', 'ASC');
+    $query->set('posts_per_page', -1);
+  }
+  
+  if (!is_admin() && is_post_type_archive('event') AND $query->is_main_query()) {
+    $today = date('Ymd');
+    $query->set('meta_key', 'event_date');
+    $query->set('orderby', 'meta_value_num');
+    $query->set('order', 'ASC');
+    $query->set('meta_query', array(
+      array(
+        'key' => 'event_date',
+        'compare' => '>=',
+        'value' => $today,
+        'type' => 'numeric'
+      )
+      ));
+  }
+}
+add_action('pre_get_posts', 'prac_adjust_queries');
+
+?>
+```
+
+
+
+### Custom Field 만들고 event와 program 관계 만들기
+
+admin 페이지에서 custom Field 새로 만들기로 type을 relationship으로 선택
+
+post type은 program으로, location에서 post type is equal to event
+
+
+
+**이렇게 만들었으면 어떻게 사용을 해야할까?**
+
+Single-event.php 파일에서 하단에 코드를 추가한다
+
+> relatedPrograms가 무엇을 들고있는지 알고싶으면
+>
+> Print_r($relatedPrograms); 를 사용하면 다 나온다
+
+```php+HTML
+<?php
+	
+  $relatedPrograms = get_field('related_programs');
+
+	if ($relatedPrograms) {
+    echo '<hr class="section-break">';
+	echo '<h2 class="headline headline--medium">Related Program(s)</h2>';
+	echo '<ul class="link-list min-list">';
+	foreach($relatedPrograms as $program) {?>
+<li><a href="<?php echo get_the_permalink($program); ?>"><?php echo get_the_title($program); ?></a></li>
+  <?php }
+  echo '</ul>';
+  ?>
+  }
+```
+
+
+
+프로그램페이지에서 관련된 이벤트 보여주기
+
+single.program.php
+
+```php+HTML
+<?php get_header();
+  while (have_posts()) {
+    the_post(); ?>
+    <div class="page-banner">
+    <div class="page-banner__bg-image" style="background-image: url(<?php echo get_theme_file_uri('/images/ocean.jpg'); ?>);"></div>
+    <div class="page-banner__content container container--narrow">
+      <h1 class="page-banner__title"><?php the_title();?></h1>
+      <div class="page-banner__intro">
+        <p>Don't forget to replace me later</p>
+      </div>
+    </div>  
+  </div>
+
+  <div class="container container--narrow page-section">
+  <div class="metabox metabox--position-up metabox--with-home-link">
+      <p><a class="metabox__blog-home-link" href="<?php echo get_post_type_archive_link('program');?>">
+      <i class="fa fa-home" aria-hidden="true"></i> All Programs</a>
+      <span class="metabox__main"><?php the_title(); ?></span></p>
+    </div>
+
+    <div class="generic-content"><?php the_content();?></div>
+
+    <?php
+            $today = date('Ymd');
+            $homepageEvents = new WP_Query(array(
+              'posts_per_page' => 2,
+              'post_type' => 'event',
+              'meta_key' => 'event_date',
+              'orderby' => 'meta_value_num',
+              'order' => 'ASC',
+              'meta_query' => array(
+              	array(
+                	'key' => 'event_date',
+                  'compare' => '>=',
+                  'value' => $today,
+                  'type' => 'numeric'
+                ),
+                // 새로운 필터를 추가한다.
+                // 이 배열이 related_programs이면
+                // contain하고
+                // 현재 program post의 id값
+                array(
+                  'key' => 'related_programs', // serialize
+                  'compare' => 'LIKE',
+                  'value' => '"' . get_the_ID(). '"' // "12" 같이 쌍따움표를 포함해야한다
+                )
+              )
+            ));
+          
+          	while($homepageEvents->have_posts()) {
+              $homepageEvents->the_post(); ?>
+          		<div class="event-summary">
+            <a class="event-summary__date t-center" href="#">
+              <span class="event-summary__month">
+                <?php
+                  $eventDate = new DateTime(get_field('event_date'));
+                  echo $eventDate->format('M');
+                ?>
+              </span>
+              <span class="event-summary__day"><?php echo $eventDate->format('d');?></span>
+            </a>
+            <div class="event-summary__content">
+              <h5 class="event-summary__title headline headline--tiny"><a href="<?php the_permalink(); ?>"><?php the_title(); ?></a></h5>
+              <p><?php echo wp_trim_words(get_the_content(), 18);?> <a href="<?php the_permalink(); ?>" class="nu gray">Learn more</a></p>
+            </div>
+          </div>
+            <?php }
+          ?>
+  </div>
+	<?php 
+};
+get_footer();
+?>
+```
+
+
+
+
+
+
+
+## Professors Post Type
+
+ single-professor.php
+
+```php+HTML
+<?php get_header();
+  while (have_posts()) {
+    the_post(); ?>
+    <div class="page-banner">
+    <div class="page-banner__bg-image" style="background-image: url(<?php echo get_theme_file_uri('/images/ocean.jpg'); ?>);"></div>
+    <div class="page-banner__content container container--narrow">
+      <h1 class="page-banner__title"><?php the_title();?></h1>
+      <div class="page-banner__intro">
+        <p>Don't forget to replace me later</p>
+      </div>
+    </div>  
+  </div>
+
+  <div class="container container--narrow page-section">
+  <div class="metabox metabox--position-up metabox--with-home-link">
+      <p><a class="metabox__blog-home-link" href="<?php echo get_post_type_archive_link('program');?>">
+      <i class="fa fa-home" aria-hidden="true"></i> All Programs</a>
+      <span class="metabox__main"><?php the_title(); ?></span></p>
+    </div>
+
+    <div class="generic-content"><?php the_content();?></div>
+
+    <?php 
+
+$relatedProfessors = new WP_Query(array(
+  'posts_per_page' => -1,
+  'post_type' => 'professor',
+  'orderby' => 'title',
+  'order' => 'ASC',
+  'meta_query' => array(
+    array(
+      'key' => 'related_programs',
+      'compare' => 'LIKE',
+      'value' => '"'.get_the_ID().'"'
+    )
+  )
+));
+
+if ($relatedProfessors->have_posts()) {
+  echo '<hr class="section-break">';
+echo '<h2 class="headline headline--medium">' . get_the_title() .' Professors</h2>';
+
+while($relatedProfessors->have_posts()) {
+  $relatedProfessors->the_post(); ?>
+  <li><a href="<?php the_permalink(); ?>"><?php the_title(); ?></a></li>
+<?php }
+}
+
+wp_reset_postdata();
+
+            $today = date('Ymd');
+            $homepageEvents = new WP_Query(array(
+              'posts_per_page' => 2,
+              'post_type' => 'event',
+              'meta_key' => 'event_date',
+              'orderby' => 'meta_value_num',
+              'order' => 'ASC',
+              'meta_query' => array(
+              	array(
+                	'key' => 'event_date',
+                  'compare' => '>=',
+                  'value' => $today,
+                  'type' => 'numeric'
+                ),
+                array(
+                  'key' => 'related_programs',
+                  'compare' => 'LIKE',
+                  'value' => '"'.get_the_ID().'"'
+                )
+              )
+            ));
+
+            if ($homepageEvents->have_posts()) {
+              echo '<hr class="section-break">';
+            echo '<h2 class="headline headline--medium">Upcoming '. get_the_title() .' Events</h2>';
+          
+          	while($homepageEvents->have_posts()) {
+              $homepageEvents->the_post(); ?>
+          		<div class="event-summary">
+            <a class="event-summary__date t-center" href="#">
+              <span class="event-summary__month">
+                <?php
+                  $eventDate = new DateTime(get_field('event_date'));
+                  echo $eventDate->format('M');
+                ?>
+              </span>
+              <span class="event-summary__day"><?php echo $eventDate->format('d');?></span>
+            </a>
+            <div class="event-summary__content">
+              <h5 class="event-summary__title headline headline--tiny"><a href="<?php the_permalink(); ?>"><?php the_title(); ?></a></h5>
+              <p><?php echo wp_trim_words(get_the_content(), 18);?> <a href="<?php the_permalink(); ?>" class="nu gray">Learn more</a></p>
+            </div>
+          </div>
+            <?php }
+            }
+          ?>
+  </div>
+	<?php 
+};
+get_footer();
+?>
+```
+
+
+
+## Featured Image
+
+이미지를 업로드 하기 위한 세팅
+
+functions.php
+
+```php
+function prac_features() {
+  add_theme_support('title-tag');
+  add_theme_support('post-thumbnails');
+}
+
+add_action('after_setup_theme', 'prac_features');
+
+```
+
+
+
+Mu-plugin
+
+Prac-post-types.php (thumbnail 추가)
+
+```php
+register_post_type('professor', array(
+    'supports' => array('title', 'editor', 'thumbnail'),
+    'public' => true,
+    'labels' => array(
+      'name' => 'Professors',
+      'add_new_item' => 'Add New Professor',
+      'edit_item' => 'Edit Professor',
+      'all_items' => 'All Professors',
+      'singular_name' => 'Professor'
+    ),
+    'menu_icon' => 'dashicons-welcome-learn-more'
+  ));
+}
+```
+
+ 
+
+이미지 등록
+
+
+
+single.professor.php 에 가서 이미지 추가하기
+
+```php+HTML
+<div class="generic-content"><?php the_post_thumbnail(); the_content();?></div>
+```
+
+보기좋게 만들기
+
+```php+HTML
+<div class="generic-content">
+      <div class="row group">
+        <div class="one-third">
+          <?php the_post_thumbnail();?>
+        </div>
+        <div class="two-third">
+          <?php the_content(); ?>
+        </div>
+      </div>
+    </div>
+```
+
+- The_post_thumbnail_url()
+
+
+
+이미지 사이즈 조절하기
+
+wp-content => upload => 여러 크기의 이미지가 저장되어 있다 (워드프레스가 자동을 생성함)
+
+
+
+functions.php
+
+```php
+function prac_features() {
+  add_theme_support('title-tag');
+  add_theme_support('post-thumbnails');
+  add_image_size('professorLandscape', 400, 260, true);
+  // 속성 ('닉네임', '넓이', '높이', 자르기 여부)
+  add_image_size('professorPortrait', 480, 650, true);
+}
+
+add_action('after_setup_theme', 'prac_features');
+
+
+```
+
+
+
+### 플러그인 사용
+
+regenerate thumbnails 설치 - 활성화
+
+Tools - regen, Thumbnails
+
+
+
+###어떻게 화면에 보여줄까?
+
+single.professor.php
+
+```php+HTML
+<div class="generic-content">
+      <div class="row group">
+        <div class="one-third">
+          <?php the_post_thumbnail('professorPortrait');?>
+        </div>
+        <div class="two-third">
+          <?php the_content(); ?>
+        </div>
+      </div>
+    </div>
+```
+
+
+
+워드프레스는 이미지를 잘라낼때 중앙을 위주로 잘라낸다
+
+### 잘라내는 것을 조절 하는 방법은?
+
+플러그인을 활용하자..
+
+
+
+## 유저가 이미지를 업로드 할 수 있게 하는 방법
+
+ Custom Field 추가
+
+Single-professor.php
+
+```php+HTML
+<div class="page-banner">
+    <div class="page-banner__bg-image" style="background-image: url(<?php 
+    $pageBannerImage = get_field('page_banner_background_image'); echo $pageBannerImage['url']
+    ?>);"></div>
+    <div class="page-banner__content container container--narrow">
+      <h1 class="page-banner__title"><?php the_title();?></h1>
+      <div class="page-banner__intro">
+        <p><?php the_field('page_banner_subtitle')?></p>
+      </div>
+    </div>  
+  </div>
+```
+
+커스텀한 사이즈 이미지로 보기
+
+```php+html
+<div class="page-banner">
+    <div class="page-banner__bg-image" style="background-image: url(<?php 
+    $pageBannerImage = get_field('page_banner_background_image'); echo $pageBannerImage['sizes']['pageBanner']
+    ?>);"></div>
+    <div class="page-banner__content container container--narrow">
+      <h1 class="page-banner__title"><?php the_title();?></h1>
+      <div class="page-banner__intro">
+        <p><?php the_field('page_banner_subtitle')?></p>
+      </div>
+    </div>  
+  </div>
+```
+
+
+
+## 반복되는 코드 줄이기
+
+ functions.php
+
+```php
+ //반복되는 코드를 복사 하여 함수 만들기
+ <?php
+
+function pageBanner($args) {
+  
+   if (!$args['title']) {
+     $args['title'] = get_the_title();
+   }
+   
+   if (!$args['subtitle']) {
+     $args['subtitle'] = get_field('page_banner_subtitle');
+   }
+  ?>
+  <div class="page-banner">
+    <div class="page-banner__bg-image" style="background-image: url(<?php 
+    $pageBannerImage = get_field('page_banner_background_image'); echo $pageBannerImage['size']['pageBanner']
+    ?>);"></div>
+    <div class="page-banner__content container container--narrow">
+      <h1 class="page-banner__title"><?php echo $args['title']?></h1>
+      <div class="page-banner__intro">
+        <p><?php echo $args['subtitle']?></p>
+      </div>
+    </div>  
+  </div>
+
+<?php
+}
+```
+
+> title이 없으면 default 값으로 get_the_title()을 사용하고
+
+page.php
+
+```php+HTML
+
+```
 
